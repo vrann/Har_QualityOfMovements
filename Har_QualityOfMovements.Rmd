@@ -1,0 +1,110 @@
+# Quality of Barbell Lifts
+
+The goal of this research is to provide a data model which will allow to predict, how well certain excersise is done. Research is based on the data, received from the 6 participants of the experiment, who were using  accelerometers on the belt, forearm, arm, and dumbell and were asked to perform barbell lifts correctly and incorrectly in 5 different ways. The model will predict, in wat way each experiment was done, namely to what class experiments belongs. We will use supervised machine lerning, based on the recorded data and the class of excersise assigned y experimentator
+
+## Data
+
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har
+
+## Prediction Model Design
+
+### Exploratory Analysis and Feature Selection 
+
+First, in order to build prediction model, we will load the data and make some exploratory analysis. This will allow to understand better what data we are working for and get an idea what predictors may be useful and what can be dropped rather way. As far as the model should be qulified for out-of sample error, the data is split on training and testing set. The breakdown assigns 60% of data to the training set and the rest 40% to the testing. Exploratory analysis will be done just on testing data.
+
+```{r}
+library(caret)
+excersises = read.csv("pml-training.csv", header=T)
+
+inTrain = createDataPartition(y=excersises$classe, p=0.6, list=F)
+training = excersises[inTrain,]
+testing = excersises[-inTrain,]
+```
+
+First, we will check what kind of the data are in each variables using summary.
+
+```{r}
+names(training)
+```
+
+The bunch of variables looks like will not provide anough value for the model such as index of experiment. Besides there are such variables as name of the person who does experiment and date/time when experiment was done: the assumption of the experiment that the model can be used regardless of the person who is doing experiment and regardles of time during the day, otherwise there is a risk to adjust data very well to certain person but make the model unaplicable to the other person (or other time during the day). So all these variables will be dropped. We will build smaller data set just with the variables interesting for experiment.
+
+```{r}
+dropColumns = c("X","user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp", "new_window","num_window")
+trainingSmall = training[,!(names(training) %in% dropColumns)]
+```
+
+Next, we will look at the quntitive information in the variables to grasp whot measures are there:
+```{r}
+summary(trainingSmall)
+```
+
+A bunch of variables has NAs in most part of the data. They are unlikely to provide good predictive value to the model. So we will drop them as well.
+
+```{r}
+NA_values = apply(trainingSmall, 2, function(x) {
+     sum(is.na(x))
+})
+trainingSmall = trainingSmall[,which(NA_values==0)]
+dim(trainingSmall)
+```
+
+Then, we will do some exploratory analysis with plots. We will plot together pair by pair all the variables on the 10 different feature plots and examine plot of pairs of 8-10 varables at a time. This will allow toremove all the variables which are noisy and does not provide enough distinctive value for the model. Here is an example of the first of such plot:
+
+```{r, echo=FALSE}
+featurePlot(training[,1:7],training$classe,plot="pairs")
+```
+
+After this exploratory analysis we are ready to remove some features which will not add value to the model.
+```{r}
+dropColumns = c("kurtosis_roll_belt","kurtosis_picth_belt","kurtosis_yaw_belt","skewness_roll_belt","skewness_roll_belt.1","skewness_yaw_belt","amplitude_yaw_belt","kurtosis_roll_arm","kurtosis_picth_arm","kurtosis_yaw_arm","skewness_roll_arm","skewness_pitch_arm","kurtosis_roll_dumbbell","kurtosis_yaw_dumbbell","skewness_roll_dumbbell","skewness_yaw_dumbbell","amplitude_yaw_dumbbell","kurtosis_roll_forearm","kurtosis_picth_forearm","kurtosis_yaw_forearm","skewness_roll_forearm","skewness_pitch_forearm","skewness_yaw_forearm","max_yaw_forearm","min_yaw_forearm","amplitude_yaw_forearm", "skewness_yaw_arm")
+trainingSmall = trainingSmall[,!(names(trainingSmall) %in% dropColumns)]
+
+dropFactors = c("max_yaw_belt", "min_yaw_belt", "kurtosis_picth_dumbbell", "skewness_pitch_dumbbell", "max_yaw_dumbbell", "min_yaw_dumbbell")
+trainingSmall = trainingSmall[,!(names(trainingSmall) %in% dropFactors)]
+
+dim(trainingSmall)
+```
+
+We ended up with 53 variables, which will be used in the model.
+
+```{r}
+names(trainingSmall)
+```
+
+### Selection of the Model and Cross-Validation
+
+We will use Generalized Boosted Regression Models algorythm in order to build prediction model. This algorythm is good for the set of data because we have a bunch of possibly weak predictors. GBM will allow to weight and add them up to get a stronger predictor. Besides, gbm uses tree-based techniques which will have a better prediction value having amount of predictors. One risk with using this technique is overfitting of the data, which can potentially be improved with less predictors.
+
+For the cross-validation we will use Bootstrap resampling.
+
+```{r}
+fit = train(classe~., method = "gbm", data = trainingSmall, verbose=F)
+print(fit)
+```
+
+Here is in-sample confusion matrix for the model
+```{r}
+trainFit = predict(fit, training)
+confusionMatrix(training$classe, trainFit)
+```
+
+## Accuracy of the Model
+
+Using test data set we will build confusion matrix and estimeate out of sample error. Accuracy of the model which is a measure of out of sample error is 96.2% which is good for the prediction model we need.
+
+```{r}
+test = predict(fit, testing)
+confusionMatrix(testing$classe, test)
+```
+
+## Prediction of classe on Test data set
+
+As application of the model we will predict classes on 20 experiments provided by the same research group. Data was obtained from https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+```{r}
+excersisesTest = read.csv("pml-testing.csv", header=T)
+test_excersises = predict(fit, excersisesTest)
+test_excersises
+```
